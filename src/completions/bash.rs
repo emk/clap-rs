@@ -3,7 +3,7 @@ use std::io::Write;
 
 // Internal
 use app::parser::Parser;
-use args::{ArgSettings, OptBuilder};
+use args::{ArgSettings, Opt, SwitchedArg, BaseArg, ValuedArg};
 use completions;
 
 pub struct BashGen<'a, 'b>
@@ -142,7 +142,7 @@ complete -F _{name} {name}
         }
         let mut opts = String::new();
         for o in &p.opts {
-            if let Some(l) = o.long {
+            if let Some(l) = o.long() {
                 opts = format!("{}
                 --{})
                     COMPREPLY=({})
@@ -152,7 +152,7 @@ complete -F _{name} {name}
                                l,
                                self.vals_for(o));
             }
-            if let Some(s) = o.short {
+            if let Some(s) = o.short() {
                 opts = format!("{}
                     -{})
                     COMPREPLY=({})
@@ -166,8 +166,7 @@ complete -F _{name} {name}
         opts
     }
 
-    fn vals_for(&self, o: &OptBuilder) -> String {
-        use args::AnyArg;
+    fn vals_for(&self, o: &Opt) -> String {
         let mut ret = String::new();
         let mut needs_quotes = true;
         if let Some(vals) = o.possible_vals() {

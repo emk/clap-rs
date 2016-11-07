@@ -6,7 +6,7 @@ use std::ascii::AsciiExt;
 // Internal
 use app::App;
 use app::parser::Parser;
-use args::{ArgSettings, AnyArg};
+use args::{ArgSettings, AnyArg, SwitchedArg, BaseArg, ValuedArg};
 use completions;
 use INTERNAL_ERROR_MSG;
 
@@ -152,8 +152,8 @@ fn subcommands_and_args_of(p: &Parser) -> String {
     for arg in p.positionals() {
         debugln!("iter;arg={}", arg.name);
         let a = format!("\"{name}:{help}\" \\", 
-            name = arg.name.to_ascii_uppercase(), 
-            help = arg.help.unwrap_or(""));
+            name = arg.name().to_ascii_uppercase(), 
+            help = arg.help().unwrap_or(""));
         
         if !a.is_empty() {
             ret.push(a);

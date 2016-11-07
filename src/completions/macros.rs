@@ -1,3 +1,4 @@
+use args::BaseArg;
 
 macro_rules! w {
     ($buf:expr, $to_w:expr) => {

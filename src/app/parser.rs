@@ -22,7 +22,7 @@ use app::help::Help;
 use app::meta::AppMeta;
 use app::settings::{AppFlags, AppSettings};
 use args::{AnyArg, ArgMatcher};
-use args::{Arg, ArgGroup, FlagBuilder, OptBuilder, PosBuilder};
+use args::{Arg, ArgGroup, Flag, Opt, Positional};
 use args::MatchedArg;
 use args::settings::ArgSettings;
 use completions::ComplGen;
@@ -42,14 +42,9 @@ pub struct Parser<'a, 'b>
     pub short_list: Vec<char>,
     pub long_list: Vec<&'b str>,
     blacklist: Vec<&'b str>,
-    // A list of possible flags
-    pub flags: Vec<FlagBuilder<'a, 'b>>,
-    // A list of possible options
-    pub opts: Vec<OptBuilder<'a, 'b>>,
-    // A list of positional arguments
-    pub positionals: VecMap<PosBuilder<'a, 'b>>,
-    // A list of subcommands
-    #[doc(hidden)]
+    pub flags: Vec<Flag<'a, 'b>>,
+    pub opts: Vec<Opt<'a, 'b>>,
+    pub positionals: VecMap<Positional<'a, 'b>>,
     pub subcommands: Vec<App<'a, 'b>>,
     groups: HashMap<&'a str, ArgGroup<'a>>,
     global_args: Vec<Arg<'a, 'b>>,
@@ -57,7 +52,7 @@ pub struct Parser<'a, 'b>
     help_short: Option<char>,
     version_short: Option<char>,
     settings: AppFlags,
-    pub g_settings: Vec<AppSettings>,
+    pub g_settings: AppFlags,
     pub meta: AppMeta<'b>,
     trailing_vals: bool,
 }
@@ -78,7 +73,7 @@ impl<'a, 'b> Default for Parser<'a, 'b> {
             groups: HashMap::new(),
             global_args: vec![],
             overrides: vec![],
-            g_settings: vec![],
+            g_settings: AppFlags::new(),
             settings: AppFlags::new(),
             meta: AppMeta::new(),
             trailing_vals: false,
@@ -162,6 +157,12 @@ impl<'a, 'b> Parser<'a, 'b>
             }
         }
         if a.is_set(ArgSettings::Required) {
+            // If the arg is required, add all it's requirements to master required list
+            if let Some(ref areqs) = a.requires {
+                for r in areqs {
+                    self.reqs.push(*r);
+                }
+            }
             self.required.push(a.name);
         }
         if a.index.is_some() || (a.short.is_none() && a.long.is_none()) {
@@ -175,14 +176,14 @@ impl<'a, 'b> Parser<'a, 'b>
                     argument\n\n\tPerhaps try .multiple(true) to allow one positional argument \
                     to take multiple values",
                                   a.name));
-            let pb = PosBuilder::from_arg(a, i as u64, &mut self.required);
+            let pb = Positional::from_arg(a, i as u64, &mut self.required);
             self.positionals.insert(i, pb);
         } else if a.is_set(ArgSettings::TakesValue) {
-            let mut ob = OptBuilder::from_arg(a, &mut self.required);
+            let mut ob = Opt::from_arg(a, &mut self.required);
             ob.unified_ord = self.flags.len() + self.opts.len();
             self.opts.push(ob);
         } else {
-            let mut fb = FlagBuilder::from(a);
+            let mut fb = Flag::from(a);
             fb.unified_ord = self.flags.len() + self.opts.len();
             self.flags.push(fb);
         }
@@ -373,7 +374,7 @@ impl<'a, 'b> Parser<'a, 'b>
             .filter_map(|p| self.positionals.values().find(|x| x.name == p))
             .filter(|p| !args_in_groups.contains(&p.name))
             .map(|p| (p.index, p))
-            .collect::<BTreeMap<u64, &PosBuilder>>();// sort by index
+            .collect::<BTreeMap<u64, &Positional>>();// sort by index
         debugln!("args_in_groups={:?}", args_in_groups);
         for &p in pmap.values() {
             let s = p.to_string();
@@ -609,7 +610,7 @@ impl<'a, 'b> Parser<'a, 'b>
     }
 
     #[inline]
-    fn get_opt(&self, arg: &str) -> Option<&OptBuilder<'a, 'b>> {
+    fn get_opt(&self, arg: &str) -> Option<&Opt<'a, 'b>> {
         debugln!("fn=get_opt");
         self.opts
             .iter()
@@ -681,7 +682,7 @@ impl<'a, 'b> Parser<'a, 'b>
             sc.clone()
         };
         if help_help {
-            let mut pb = PosBuilder::new("subcommand", 1);
+            let mut pb = Positional::new("subcommand", 1);
             pb.help = Some("The subcommand whose help message to display");
             pb.set(ArgSettings::Multiple);
             sc.positionals.insert(1, pb);
@@ -737,7 +738,7 @@ impl<'a, 'b> Parser<'a, 'b>
                    !pos_sc {
                     // Check to see if parsing a value from an option
                     if let Some(arg) = needs_val_of {
-                        // get the OptBuilder so we can check the settings
+                        // get the Opt so we can check the settings
                         if let Some(opt) = self.get_opt(arg) {
                             needs_val_of = try!(self.add_val_to_arg(&*opt, &arg_os, matcher));
                             // get the next value from the iterator
@@ -1135,7 +1136,7 @@ impl<'a, 'b> Parser<'a, 'b>
             if self.help_short.is_none() && !self.short_list.contains(&'h') {
                 self.help_short = Some('h');
             }
-            let arg = FlagBuilder {
+            let arg = Flag {
                 name: "hclap_help",
                 short: self.help_short,
                 long: Some("help"),
@@ -1155,7 +1156,7 @@ impl<'a, 'b> Parser<'a, 'b>
                 self.version_short = Some('V');
             }
             // name is "vclap_version" because flags are sorted by name
-            let arg = FlagBuilder {
+            let arg = Flag {
                 name: "vclap_version",
                 short: self.version_short,
                 long: Some("version"),
@@ -1391,7 +1392,7 @@ impl<'a, 'b> Parser<'a, 'b>
 
     fn parse_opt(&self,
                  val: Option<&OsStr>,
-                 opt: &OptBuilder<'a, 'b>,
+                 opt: &Opt<'a, 'b>,
                  matcher: &mut ArgMatcher<'a>)
                  -> ClapResult<Option<&'a str>> {
         debugln!("fn=parse_opt;");
@@ -1519,7 +1520,7 @@ impl<'a, 'b> Parser<'a, 'b>
     }
 
     fn parse_flag(&self,
-                  flag: &FlagBuilder<'a, 'b>,
+                  flag: &Flag<'a, 'b>,
                   matcher: &mut ArgMatcher<'a>)
                   -> ClapResult<()> {
         debugln!("fn=parse_flag;");
@@ -1955,15 +1956,15 @@ impl<'a, 'b> Parser<'a, 'b>
         Ok(())
     }
 
-    pub fn flags(&self) -> Iter<FlagBuilder<'a, 'b>> {
+    pub fn flags(&self) -> Iter<Flag<'a, 'b>> {
         self.flags.iter()
     }
 
-    pub fn opts(&self) -> Iter<OptBuilder<'a, 'b>> {
+    pub fn opts(&self) -> Iter<Opt<'a, 'b>> {
         self.opts.iter()
     }
 
-    pub fn positionals(&self) -> vec_map::Values<PosBuilder<'a, 'b>> {
+    pub fn positionals(&self) -> vec_map::Values<Positional<'a, 'b>> {
         self.positionals.values()
     }
 
@@ -2001,7 +2002,7 @@ impl<'a, 'b> Parser<'a, 'b>
         None
     }
 
-    fn find_flag(&self, name: &str) -> Option<&FlagBuilder<'a, 'b>> {
+    fn find_flag(&self, name: &str) -> Option<&Flag<'a, 'b>> {
         for f in self.flags() {
             if f.name == name ||
                f.aliases.as_ref().unwrap_or(&vec![("",false)]).iter().any(|&(n, _)| n == name) {
@@ -2011,7 +2012,7 @@ impl<'a, 'b> Parser<'a, 'b>
         None
     }
 
-    fn find_option(&self, name: &str) -> Option<&OptBuilder<'a, 'b>> {
+    fn find_option(&self, name: &str) -> Option<&Opt<'a, 'b>> {
         for o in self.opts() {
             if o.name == name ||
                o.aliases.as_ref().unwrap_or(&vec![("",false)]).iter().any(|&(n, _)| n == name) {
@@ -2021,7 +2022,7 @@ impl<'a, 'b> Parser<'a, 'b>
         None
     }
 
-    fn find_positional(&self, name: &str) -> Option<&PosBuilder<'a, 'b>> {
+    fn find_positional(&self, name: &str) -> Option<&Positional<'a, 'b>> {
         for p in self.positionals() {
             if p.name == name {
                 return Some(p);

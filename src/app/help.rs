@@ -8,7 +8,7 @@ use std::usize;
 // Internal
 use app::{App, AppSettings};
 use app::parser::Parser;
-use args::{AnyArg, ArgSettings, DispOrder};
+use args::{AnyArg, ArgSettings, SwitchedArg};
 use errors::{Error, Result as ClapResult};
 use fmt::{Format, Colorizer};
 
@@ -36,11 +36,11 @@ const TAB: &'static str = "    ";
 trait ArgWithDisplay<'b, 'c>: AnyArg<'b, 'c> + Display {}
 impl<'b, 'c, T> ArgWithDisplay<'b, 'c> for T where T: AnyArg<'b, 'c> + Display {}
 
-trait ArgWithOrder<'b, 'c>: ArgWithDisplay<'b, 'c> + DispOrder {
+trait ArgWithOrder<'b, 'c>: ArgWithDisplay<'b, 'c> + SwitchedArg<'c> {
     fn as_base(&self) -> &ArgWithDisplay<'b, 'c>;
 }
 impl<'b, 'c, T> ArgWithOrder<'b, 'c> for T
-    where T: ArgWithDisplay<'b, 'c> + DispOrder
+    where T: ArgWithDisplay<'b, 'c> + SwitchedArg<'c>
 {
     fn as_base(&self) -> &ArgWithDisplay<'b, 'c> {
         self
@@ -49,12 +49,6 @@ impl<'b, 'c, T> ArgWithOrder<'b, 'c> for T
 
 fn as_arg_trait<'a, 'b, T: ArgWithOrder<'a, 'b>>(x: &T) -> &ArgWithOrder<'a, 'b> {
     x
-}
-
-impl<'b, 'c> DispOrder for App<'b, 'c> {
-    fn disp_ord(&self) -> usize {
-        999
-    }
 }
 
 macro_rules! color {
